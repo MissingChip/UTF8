@@ -30,6 +30,21 @@ UTF8Char uni_utf8(unicode_t s);
  * with something else at the very least
  */
 class UTF8 {
+	/* TODO
+	 * push_front
+	 * insert
+	 * erase
+	 * find
+	 * substr
+	 * compare
+	 * resize
+	 *
+	 * ???
+	 * operator==
+	 * shrink_to_fit
+	 * reserve
+	 */
+
 	public:
 		/**
 		 * Create a UTF-8 encoded string based off of a c++ string
@@ -52,6 +67,18 @@ class UTF8 {
 		 */
 		int length();
 		/**
+		 * An iterator starting at the beginning of the string
+		 */
+		UTF8Iter begin();
+		/**
+		 * An iterator starting at the end of the string
+		 */
+		UTF8Iter end();
+		/**
+		 * returns whether or not the string is empty (contains no characters)
+		 */
+		bool empty() { return raw_string.empty(); }
+		/**
 		 * Get the character at the given index
 		 *
 		 * not the same as the character at the given index of the internal string,
@@ -59,8 +86,25 @@ class UTF8 {
 		 */
 		UTF8Ref operator[](int idx);
 		/**
-		 * 	Get the true index of the internal string given the
-		 * 	index into a utf-8 string
+		 * Set the contents of this string to the contents of another
+		 * (using the std::string assignment)
+		 */
+		UTF8& operator=(const UTF8& b) { raw_string = b.raw_string; n_chars = b.n_chars; return *this; }
+		/**
+		 * Append the contents of another string to this string
+		 */
+		UTF8& operator+=(const UTF8& b) { raw_string += b.raw_string; n_chars += b.n_chars; return *this; }
+		/**
+		 * Append the contents of another string to this string
+		 */
+		UTF8& append(const UTF8& b) { raw_string.append(b.raw_string); n_chars += b.n_chars; return *this; }
+		/**
+		 * 	Push a UTF8Char to the back of this string
+		 */
+		UTF8& push_back(const UTF8Char& c);
+		/**
+		 * Get the true index of the internal string given the
+		 * index into a utf-8 string
 		 */
 		int true_idx(int idx);
 		/**
@@ -104,9 +148,12 @@ class UTF8 {
 		 */
 		std::string raw_string;
 		int n_chars = -1;
+		int access_idx = 0;
+		int access_true_idx = 0;
 
 	private:
 		void calculate_length();
+		void inc_n_chars() { if(n_chars != -1)	++n_chars; }
 };
 
 /**
@@ -121,10 +168,14 @@ class UTF8Char {
 	public:
 		UTF8Char(const char* c);
 		UTF8Char(unicode_t c);
-		char str[4]; //probably should set to zeros
+		char str[4] = {0}; //probably should set to zeros
+		static char cstr[5]; //for c_str()
 		bool operator==(const UTF8Char& b){return *((int*)str) == *((int*)b.str);};
 		unicode_t uni() {return utf8_uni(str); }
+		const char* c_str() const {memcpy(cstr, str, 4); return cstr; }
+		std::string to_str() const {return std::string(str, utf8size(str));}
 };
+char UTF8Char::cstr[5];
 
 
 class UTF8Ref {
@@ -135,12 +186,14 @@ class UTF8Ref {
 		UTF8Ref ();
 		UTF8Ref (const UTF8Ref& i) : parent{i.parent}, idx{i.idx} {}
 		UTF8Ref (UTF8* parent, int idx) : parent{parent}, idx{idx} {}
-		UTF8Ref& operator=(const UTF8Ref& b) {set_char(b.get_char()); return *this; } //assignment
-		UTF8Ref& operator=(const UTF8Char& b) {set_char(b); return *this; } //assignment
-		UTF8Char get_char() const {return UTF8Char(parent->get(idx)); }
-		void set_char(UTF8Char c) {parent->set(idx, c); }
-		operator UTF8Char() {return get_char(); }
-		operator unicode_t() {return get_char().uni(); }
+		UTF8Ref& operator=(const UTF8Ref& b) { set_char(b.get_char()); return *this; } //assignment
+		UTF8Ref& operator=(const UTF8Char& b) { set_char(b); return *this; } //assignment
+		bool operator==(const UTF8Ref& b) { return get_char() == b.get_char(); }// equality
+		UTF8Char get_char() const { return UTF8Char(parent->get(idx)); }
+		const char* c_str() const { return get_char().c_str(); }
+		void set_char(UTF8Char c) { parent->set(idx, c); }
+		operator UTF8Char() { return get_char(); }
+		operator unicode_t() { return get_char().uni(); }
 		/* Doable but unimportant methods (adding to a unicode value is not very useful)
 		UTF8Ref& operator++(); //pre-increment (++a)
 		UTF8Ref operator++(int); //post-increment (a++)
@@ -152,7 +205,6 @@ class UTF8Ref {
 		bool operator>(const UTF8Ref& b); //
 		bool operator<=(const UTF8Ref& b); //
 		bool operator>=(const UTF8Ref& b); //
-		bool operator==(const UTF8Ref& b); //
 		bool operator!=(const UTF8Ref& b); //
 		UTF8Ref& operator+(size_t i); //arithmetic
 		UTF8Ref& operator-(size_t i); //
@@ -173,6 +225,7 @@ class UTF8Iter {
 
 		UTF8Iter ();
 		UTF8Iter (const UTF8Iter& i) : ref{i.ref} {}
+		UTF8Iter (UTF8* parent, int idx) : ref{parent, idx} {}
 		UTF8Iter& operator++() { ++(ref.idx); return *this; } //pre-increment (++a)
 		UTF8Iter operator++(int) { UTF8Iter r(*this); ++(r.ref.idx); return r; } //post-increment (a++)
 		UTF8Iter& operator--()  { --(ref.idx); return *this; }//pre-decrement (--a)
@@ -183,7 +236,7 @@ class UTF8Iter {
 		bool operator>(const UTF8Iter& b) { return ref.idx > b.ref.idx; } //
 		bool operator<=(const UTF8Iter& b) { return ref.idx <= b.ref.idx; } //
 		bool operator>=(const UTF8Iter& b) { return ref.idx >= b.ref.idx; } //
-		bool operator==(const UTF8Iter& b) { return ref.idx == b.ref.idx; } //
+		bool operator==(const UTF8Iter& b) { return ref.idx == b.ref.idx && ref.parent == b.ref.parent; } //
 		bool operator!=(const UTF8Iter& b) { return ref.idx != b.ref.idx; } //
 		UTF8Iter& operator=(UTF8Iter b) { ref = b.ref; return *this; } //assignment
 		UTF8Ref& operator*() { return ref; } //dereference
@@ -284,17 +337,25 @@ inline int UTF8::length(){
 	return n_chars;
 }
 
+inline UTF8Iter UTF8::begin(){
+	return UTF8Iter(this, 0);
+}
+inline UTF8Iter UTF8::end(){
+	return UTF8Iter(this, length()+1);
+}
+
 inline UTF8Ref UTF8::operator[](int idx){
 	return UTF8Ref(this, idx);
 }
+inline UTF8& UTF8::push_back(const UTF8Char& c){
+	inc_n_chars();
+	return append(c.to_str());
+}
+		
 inline UTF8Char UTF8::get(int idx){
 	const char* d = raw_string.data();
-	int i=0;
-	while(i<idx){
-		d+=utf8size(d);
-		i++;
-	}
-	return UTF8Char(d);
+	int str_i = true_idx(idx);
+	return UTF8Char(d+str_i);
 }
 inline unicode_t UTF8::get_u(int idx){
 	const char* d = raw_string.data();
@@ -307,22 +368,23 @@ inline unicode_t UTF8::get_u(int idx){
 }
 inline void UTF8::set(int idx, UTF8Char c){
 	const char* d = raw_string.data();
-	int i=0;
-	int str_i=0;
-	while(i<idx){
-		str_i += utf8size(d+str_i);
-		i++;
-	}
+	int str_i = true_idx(idx);
 	raw_string.replace(str_i, utf8size(d+str_i), c.str, utf8size(c.str));
 }
 inline int UTF8::true_idx(int idx){
 	const char* d = raw_string.data();
 	int i=0;
 	int str_i=0;
+	if(idx >= access_idx){
+		i = access_idx;
+		str_i = access_true_idx;
+	}
 	while(i<idx){
 		str_i += utf8size(d+str_i);
 		i++;
 	}
+	access_idx = i; 
+	access_true_idx = str_i;
 	return str_i;
 }
 inline int UTF8::get_true(int idx){
