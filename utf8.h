@@ -31,13 +31,11 @@ UTF8Char uni_utf8(unicode_t s);
  */
 class UTF8 {
 	/* TODO
-	 * push_front
-	 * insert
-	 * erase
 	 * find
 	 * substr
 	 * compare
 	 * resize
+	 * replace
 	 *
 	 * ???
 	 * operator==
@@ -61,11 +59,12 @@ class UTF8 {
 		/**
 		 * The size of the underlying string, in bytes
 		 */
-		int size();
+		int size() const;
 		/**
 		 * the number of charactrers in the utf-8 string
 		 */
 		int length();
+		int length() const;
 		/**
 		 * An iterator starting at the beginning of the string
 		 */
@@ -78,6 +77,11 @@ class UTF8 {
 		 * returns whether or not the string is empty (contains no characters)
 		 */
 		bool empty() { return raw_string.empty(); }
+		/**
+		 * returns whether or not the string is equivalent to another
+		 * TODO substrings (char*, etc)
+		 */
+		int compare(const UTF8& b) { return raw_string.compare(b.raw_string); }
 		/**
 		 * Get the character at the given index
 		 *
@@ -93,7 +97,7 @@ class UTF8 {
 		/**
 		 * Append the contents of another string to this string
 		 */
-		UTF8& operator+=(const UTF8& b) { raw_string += b.raw_string; n_chars += b.n_chars; return *this; }
+		UTF8& operator+=(const UTF8& b) { raw_string += b.raw_string; n_chars += b.length(); return *this; }
 		/**
 		 * Append the contents of another string to this string
 		 */
@@ -103,10 +107,51 @@ class UTF8 {
 		 */
 		UTF8& push_back(const UTF8Char& c);
 		/**
+		 * 	Push a UTF8Char to the back of this string
+		 */
+		UTF8& push_front(const UTF8Char& c);
+		/**
+		 * Insert a UTF8 char, string, standard string, or c string into the string
+		 * beginning at index pos
+		 */
+		UTF8& insert(int pos, const UTF8Char& c);
+		UTF8& insert(int pos, UTF8& c);
+		UTF8& insert(int pos, const UTF8& c);
+		UTF8& insert(int pos, const std::string& c);
+		UTF8& insert(int pos, const char* c);
+
+		/**
+		 * Erases the portion of the string value that begins at the character position pos and spans len characters
+		 */
+		UTF8& erase(int pos, int len);
+		/**
+		 * Replaces the portion of the string value that begins at the character position pos and spans len characters
+		 * with the content in s
+		 */
+		UTF8& replace(int pos, int len, const UTF8& str); 
+		UTF8& replace(int pos, int len, const UTF8& str, int subpos, int sublen); 
+
+		/**
 		 * Get the true index of the internal string given the
 		 * index into a utf-8 string
 		 */
 		int true_idx(int idx);
+		/**
+		 * Get the true index of the internal string given the
+		 * index into a utf-8 string, do not change the internal 
+		 */
+		int true_idx_q(int idx) const;
+		int true_idx(int idx) const { return true_idx_q(idx); }
+		/**
+		 * get the character at the given index in the underlying character string
+		 */
+		void true_range(int& a, int& b);
+		/**
+		 * Get the true index of the internal string given the
+		 * index into a utf-8 string
+		 */
+		void true_range_q(int& a, int& b) const;
+		void true_range(int& a, int& b) const { true_range_q(a, b); }
 		/**
 		 * get the character at the given index in the underlying character string
 		 */
@@ -127,12 +172,13 @@ class UTF8 {
 		/**
 		 * set the value at the given index to the given character
 		 */
-		void set(int idx, UTF8Char c);
 		/**
-		 * replacing
+		 * return the underlying string value, as a reference
+		 * if there's anything unimplemented, it can be done with this
 		 */
-		UTF8& replace(int pos, int len, const UTF8& str); 
-		UTF8& replace(int pos, int len, const UTF8& str, int subpos, int sublen); 
+		std::string& get_string() { return raw_string; }
+		const std::string& get_string() const { return raw_string; }
+		void set(int idx, UTF8Char c);
 		/**
 		 * return the corresponding c string
 		 */
@@ -152,8 +198,8 @@ class UTF8 {
 		int access_true_idx = 0;
 
 	private:
-		void calculate_length();
-		void inc_n_chars() { if(n_chars != -1)	++n_chars; }
+		int calculate_length() const;
+		void inc_n_chars(int amt = 1) { if(n_chars != -1) n_chars+=amt;}
 };
 
 /**
@@ -326,22 +372,29 @@ inline UTF8Char uni_utf8(unicode_t c) {
 	return UTF8Char(str + i);
 }
 
-inline int UTF8::size(){
+inline int UTF8::size() const{
 	return raw_string.size();
 }
 
 inline int UTF8::length(){
 	if(n_chars == -1){
-		calculate_length();
+		n_chars = calculate_length();
 	}
 	return n_chars;
+}
+inline int UTF8::length() const{
+	int n = n_chars;
+	if(n == -1){
+		n = calculate_length();
+	}
+	return n;
 }
 
 inline UTF8Iter UTF8::begin(){
 	return UTF8Iter(this, 0);
 }
 inline UTF8Iter UTF8::end(){
-	return UTF8Iter(this, length()+1);
+	return UTF8Iter(this, length());
 }
 
 inline UTF8Ref UTF8::operator[](int idx){
@@ -349,8 +402,93 @@ inline UTF8Ref UTF8::operator[](int idx){
 }
 inline UTF8& UTF8::push_back(const UTF8Char& c){
 	inc_n_chars();
-	return append(c.to_str());
+	raw_string.append(c.str, utf8size(c.str));
+	return *this;
 }
+inline UTF8& UTF8::push_front(const UTF8Char& c){
+	int size = utf8size(c.str);
+	if(access_idx > 0){
+		++access_idx;
+		access_true_idx += size;
+	}
+	raw_string.insert(0, c.str, size);
+	inc_n_chars();
+	return *this;
+}
+inline UTF8& UTF8::insert(int idx, const UTF8Char& c){
+	int size = utf8size(c.str);
+	if(access_idx > idx){
+		++access_idx;
+		access_true_idx += size;
+	}
+	inc_n_chars();
+	raw_string.insert(idx, c.str, size);
+	return *this;
+}
+inline UTF8& UTF8::insert(int idx, UTF8& c){
+	int l = c.length();
+	if(access_idx > idx){
+		access_idx += l;
+		access_true_idx = c.size();
+	}
+	inc_n_chars(l);
+	raw_string.insert(true_idx_q(idx), c.raw_string);
+	return *this;
+}
+inline UTF8& UTF8::insert(int idx, const UTF8& c){
+	int l = c.length();
+	if(access_idx > idx){
+		access_idx = 0;
+		access_true_idx = 0;
+	}
+	inc_n_chars(l);
+	raw_string.insert(true_idx_q(idx), c.raw_string);
+	return *this;
+}
+inline UTF8& UTF8::insert(int idx, const std::string& c){
+	if(access_idx > idx){
+		access_idx = 0;
+		access_true_idx = 0;
+	}
+	n_chars = -1;
+	raw_string.insert(true_idx(idx), c);
+	return *this;
+}
+inline UTF8& UTF8::insert(int idx, const char* c){
+	if(access_idx > idx){
+		access_idx = 0;
+		access_true_idx = 0;
+	}
+	n_chars = -1;
+	raw_string.insert(true_idx(idx), c);
+	return *this;
+}
+inline UTF8& UTF8::erase(int pos, int len){
+	int er_begin = true_idx(pos);
+	int er_end = true_idx_q(pos + len);
+	inc_n_chars(-std::min(len, length() - pos));
+	raw_string.erase(er_begin, er_end-er_begin);
+	return *this;
+}
+inline UTF8& UTF8::replace(int pos, int len, const UTF8& s){
+	int er_begin = true_idx(pos);
+	int er_end = true_idx_q(pos + len);
+	inc_n_chars(-std::min(len, length() - pos)+s.length());
+	raw_string.replace(er_begin, er_end-er_begin, s.get_string());
+	return *this;
+}
+inline UTF8& UTF8::replace(int pos, int len, const UTF8& s, int subpos, int sublen){
+	int begin_a = true_idx(pos);
+	int end_a = true_idx_q(pos + len);
+	int begin_b = s.true_idx(subpos);
+	int end_b = s.true_idx_q(subpos + sublen);
+	//true_range(begin_a, end_a);
+	//s.true_range(begin_b, end_b);
+	inc_n_chars(-std::min(len, length() - pos)+std::min(sublen, s.length() - subpos));
+	raw_string.replace(begin_a, begin_a-end_a, s.get_string(), begin_b, begin_b-end_b);
+	return *this;
+}
+
 		
 inline UTF8Char UTF8::get(int idx){
 	const char* d = raw_string.data();
@@ -387,6 +525,28 @@ inline int UTF8::true_idx(int idx){
 	access_true_idx = str_i;
 	return str_i;
 }
+inline int UTF8::true_idx_q(int idx) const{
+	const char* d = raw_string.data();
+	int i=0;
+	int str_i=0;
+	if(idx >= access_idx){
+		i = access_idx;
+		str_i = access_true_idx;
+	}
+	while(i<idx){
+		str_i += utf8size(d+str_i);
+		i++;
+	}
+	return str_i;
+}
+inline void UTF8::true_range(int& a, int& b){
+	a = true_idx(a);
+	b = true_idx_q(b);
+}
+inline void UTF8::true_range_q(int& a, int& b) const{
+	a = true_idx_q(a);
+	b = true_idx_q(b);
+}
 inline int UTF8::get_true(int idx){
 	return raw_string.at(idx);
 }
@@ -397,7 +557,7 @@ inline const char* UTF8::data(){
 		return raw_string.data();
 }
 
-inline void UTF8::calculate_length(){
+inline int UTF8::calculate_length() const{
 	const char* d = raw_string.data();
 	int i=0;
 	int str_i=0;
@@ -405,5 +565,5 @@ inline void UTF8::calculate_length(){
 		str_i += utf8size(d+str_i);
 		i++;
 	}
-	n_chars = i;
+	return i;
 }
