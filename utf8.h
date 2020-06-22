@@ -35,9 +35,8 @@ class UTF8 {
 	 * substr
 	 * compare
 	 * resize
-	 * replace
 	 *
-	 * ???
+	 * ??? maybe
 	 * operator==
 	 * shrink_to_fit
 	 * reserve
@@ -50,6 +49,13 @@ class UTF8 {
 		 * (simply copy the string)
 		 */
 		UTF8(std::string s);
+		/**
+		 * Create a UTF-8 encoded string based off of a c++ string
+		 * where the length is known
+		 *
+		 * (simply copy the string)
+		 */
+		UTF8(std::string s, int n_chars);
 		/**
 		 * Create a UTF-8 encoded string based off of a c string
 		 *
@@ -79,7 +85,7 @@ class UTF8 {
 		bool empty() { return raw_string.empty(); }
 		/**
 		 * returns whether or not the string is equivalent to another
-		 * TODO substrings (char*, etc)
+		 * TODO substrings --- (char*, etc)
 		 */
 		int compare(const UTF8& b) { return raw_string.compare(b.raw_string); }
 		/**
@@ -130,6 +136,18 @@ class UTF8 {
 		 */
 		UTF8& replace(int pos, int len, const UTF8& str); 
 		UTF8& replace(int pos, int len, const UTF8& str, int subpos, int sublen); 
+		/**
+		 * Returns the index of the first occurence of the string at or after starting position pos
+		 */
+		int find (const UTF8& str, int pos = 0) const;
+		/**
+		 * Returns the index of the first occurence of the string at or beforestarting position pos
+		 */
+		int rfind (const UTF8& str, int pos = -1) const;
+		/**
+		 * Return a substring of this string starting at `pos`, spanning `len` utf-8 characters
+		 */
+		UTF8 substr(int pos = 0, int len = -1) const;
 
 		/**
 		 * Get the true index of the internal string given the
@@ -143,15 +161,23 @@ class UTF8 {
 		int true_idx_q(int idx) const;
 		int true_idx(int idx) const { return true_idx_q(idx); }
 		/**
-		 * get the character at the given index in the underlying character string
+		 * replace a range corresponding to the utf-8 string into a range
+		 * corresponding to the range in the underlying string, where b
+		 * is the last index of the last letter
 		 */
 		void true_range(int& a, int& b);
+
 		/**
 		 * Get the true index of the internal string given the
 		 * index into a utf-8 string
 		 */
 		void true_range_q(int& a, int& b) const;
 		void true_range(int& a, int& b) const { true_range_q(a, b); }
+		/**
+		 * Get the true index of the utf-8 string given the
+		 * index into the internal string, do not change the internal 
+		 */
+		int utf_idx_q(int idx) const;
 		/**
 		 * get the character at the given index in the underlying character string
 		 */
@@ -306,6 +332,10 @@ inline UTF8Char::UTF8Char(unicode_t c){
 
 inline UTF8::UTF8(std::string s){
 	raw_string = s;
+}
+inline UTF8::UTF8(std::string s, int n_chars){
+	raw_string = s;
+	this->n_chars = n_chars;
 }
 inline UTF8::UTF8(const char* s){
 	raw_string = std::string(s);
@@ -484,11 +514,29 @@ inline UTF8& UTF8::replace(int pos, int len, const UTF8& s, int subpos, int subl
 	int end_b = subpos + sublen;
 	true_range(begin_a, end_a);
 	s.true_range(begin_b, end_b);
-	printf("%d %d\n", begin_b, end_b);
 	inc_n_chars(-std::min(len, length() - pos)+std::min(sublen, s.length() - subpos));
 	raw_string.replace(begin_a, end_a - begin_a, s.get_string(), begin_b, end_b - begin_b);
 	return *this;
 }
+//invalid utf-8 is undefined behavior
+inline int UTF8::find(const UTF8& str, int pos) const{
+	pos = true_idx_q(pos);
+	pos = raw_string.find(str.get_string(), pos);
+	return utf_idx_q(pos);
+}
+//invalid utf-8 is undefined behavior
+inline int UTF8::rfind(const UTF8& str, int pos) const{
+	pos = true_idx_q(pos);
+	pos = raw_string.rfind(str.get_string(), pos);
+	return utf_idx_q(pos);
+}
+inline UTF8 UTF8::substr(int pos, int len) const{
+	int pos2 = len;
+	if(pos2 > 0) pos2 += pos;
+	true_range_q(pos, pos2);
+	return UTF8(raw_string.substr(pos, pos2-pos), len);
+}
+
 
 		
 inline UTF8Char UTF8::get(int idx){
@@ -511,6 +559,7 @@ inline void UTF8::set(int idx, UTF8Char c){
 	raw_string.replace(str_i, utf8size(d+str_i), c.str, utf8size(c.str));
 }
 inline int UTF8::true_idx(int idx){
+	if(idx < 0) return idx;
 	const char* d = raw_string.data();
 	int i=0;
 	int str_i=0;
@@ -527,6 +576,7 @@ inline int UTF8::true_idx(int idx){
 	return str_i;
 }
 inline int UTF8::true_idx_q(int idx) const{
+	if(idx < 0) return idx;
 	const char* d = raw_string.data();
 	int i=0;
 	int str_i=0;
@@ -543,12 +593,29 @@ inline int UTF8::true_idx_q(int idx) const{
 inline void UTF8::true_range(int& a, int& b){
 	a = true_idx(a);
 	b = true_idx_q(b);
+	if(b<0) return;
 	b += utf8size(raw_string.data()+b)-1;
 }
 inline void UTF8::true_range_q(int& a, int& b) const{
 	a = true_idx_q(a);
 	b = true_idx_q(b);
+	if(b<0) return;
 	b += utf8size(raw_string.data()+b)-1;
+}
+//if idx is partway through a a character, returns the start of the next character
+inline int UTF8::utf_idx_q(int idx) const{
+	const char* d = raw_string.data();
+	int i=0;
+	int str_i=0;
+	if(idx >= access_idx){
+		i = access_idx;
+		str_i = access_true_idx;
+	}
+	while(str_i<idx){
+		str_i += utf8size(d+str_i);
+		i++;
+	}
+	return i;
 }
 inline int UTF8::get_true(int idx){
 	return raw_string.at(idx);
