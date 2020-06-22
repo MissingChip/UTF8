@@ -478,14 +478,15 @@ inline UTF8& UTF8::replace(int pos, int len, const UTF8& s){
 	return *this;
 }
 inline UTF8& UTF8::replace(int pos, int len, const UTF8& s, int subpos, int sublen){
-	int begin_a = true_idx(pos);
-	int end_a = true_idx_q(pos + len);
-	int begin_b = s.true_idx(subpos);
-	int end_b = s.true_idx_q(subpos + sublen);
-	//true_range(begin_a, end_a);
-	//s.true_range(begin_b, end_b);
+	int begin_a = pos;
+	int end_a = pos + len;
+	int begin_b = subpos;
+	int end_b = subpos + sublen;
+	true_range(begin_a, end_a);
+	s.true_range(begin_b, end_b);
+	printf("%d %d\n", begin_b, end_b);
 	inc_n_chars(-std::min(len, length() - pos)+std::min(sublen, s.length() - subpos));
-	raw_string.replace(begin_a, begin_a-end_a, s.get_string(), begin_b, begin_b-end_b);
+	raw_string.replace(begin_a, end_a - begin_a, s.get_string(), begin_b, end_b - begin_b);
 	return *this;
 }
 
@@ -542,10 +543,12 @@ inline int UTF8::true_idx_q(int idx) const{
 inline void UTF8::true_range(int& a, int& b){
 	a = true_idx(a);
 	b = true_idx_q(b);
+	b += utf8size(raw_string.data()+b)-1;
 }
 inline void UTF8::true_range_q(int& a, int& b) const{
 	a = true_idx_q(a);
 	b = true_idx_q(b);
+	b += utf8size(raw_string.data()+b)-1;
 }
 inline int UTF8::get_true(int idx){
 	return raw_string.at(idx);
